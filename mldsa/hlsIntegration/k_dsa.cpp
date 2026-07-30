@@ -1244,8 +1244,37 @@ static void make_verVer(hls::stream<int> &s_ver, hls::stream<int> &s_ver0,
 
 }
 
+/*
+ * FIPS 204 Algorithm 3 (ML-DSA.Verify), step 5:
+ * M' <- BytesToBits(IntegerToBytes(0,1) || IntegerToBytes(|ctx|,1) || ctx) || M
+ * Builds tr || 0x00 || ctxlen || ctx || m for absorption by Algorithm 8
+ * (ML-DSA.Verify_internal), step 7: mu <- H(BytesToBits(tr) || M', 64).
+ * ctxlen is uint8_t, so |ctx| <= 255 (Algorithm 3, steps 1-3) holds by
+ * construction and needs no separate runtime check.
+ */
+static void make_mprime(hls::stream<uint8_t> &out, hls::stream<uint8_t> &in_tr,
+                     hls::stream<uint8_t> &in_ctx, hls::stream<uint8_t> &in_m,
+                     unsigned int ctxlen, unsigned int mlen)
+{
+    for (unsigned int i = 0; i < TRBYTES; i++) {
+#pragma HLS PIPELINE II=1
+        out << in_tr.read();
+    }
+    out << (uint8_t)0;
+    out << (uint8_t)ctxlen;
+    for (unsigned int i = 0; i < ctxlen; i++) {
+#pragma HLS PIPELINE II=1
+        out << in_ctx.read();
+    }
+    for (unsigned int i = 0; i < mlen; i++) {
+#pragma HLS PIPELINE II=1
+        out << in_m.read();
+    }
+}
+
 extern "C" {
-void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk)
+void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk,
+          uint8_t *ctx, uint8_t ctxlen)
 {
     /*
      * Stream declaration begin
@@ -1298,6 +1327,8 @@ void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk)
 #pragma HLS STREAM variable=s_mu_mrg depth=200
     static hls::stream<uint8_t> s_m("s_m");
 #pragma HLS STREAM variable=s_m depth=200
+    static hls::stream<uint8_t> s_ctx("s_ctx");
+#pragma HLS STREAM variable=s_ctx depth=255
     static hls::stream<uint8_t> s_mu("s_mu");
 #pragma HLS STREAM variable=s_mu depth=200
 
@@ -1368,8 +1399,9 @@ void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk)
           SHAKE256_RATE, 1);
 
     readmemVer(s_m, m, mlen);
-    mergeVer_unbalancedVer(s_mu_mrg, s_mu_pre, s_m, TRBYTES, mlen);
-    shakeVer(s_mu, CRHBYTES, s_mu_mrg, TRBYTES + mlen, SHAKE256_RATE, 0);
+    readmemVer(s_ctx, ctx, ctxlen);
+    make_mprime(s_mu_mrg, s_mu_pre, s_ctx, s_m, ctxlen, mlen);
+    shakeVer(s_mu, CRHBYTES, s_mu_mrg, TRBYTES + 2 + ctxlen + mlen, SHAKE256_RATE, 0);
 
     challengeVer(s_cp, s_c_0, s_signal);
 
@@ -2024,15 +2056,23 @@ pos = inlen;
 
 static void keccak_absorb_key_mu(uint64_t s[25],
                              hls::stream<uint8_t> &in1,
-                             hls::stream<uint8_t> &in2)
+                             hls::stream<uint8_t> &in2,
+                             hls::stream<uint8_t> &in_rnd)
 {
+/*
+ * FIPS 204 Algorithm 7 (ML-DSA.Sign_internal), step 7: rho'' <- H(K || rnd || mu, 64).
+ * rnd is now a real input (previously hardcoded to zero). Supplying an
+ * all-zero rnd reproduces the prior deterministic-only behavior exactly
+ * (the spec-permitted "optional deterministic variant", Algorithm 2 step 5);
+ * a non-zero rnd enables genuine hedged signing.
+ */
 for (unsigned int j = 0; j < SEEDBYTES + CRHBYTES + RNDBYTES; j++) {
 #pragma HLS PIPELINE II=1
     uint8_t t;
     if (j < SEEDBYTES)
         t = in1.read();
     else if(j >= SEEDBYTES && j < SEEDBYTES + RNDBYTES)
-    	t = 0;
+    	t = in_rnd.read();
 	else
         t = in2.read();
     s[j / 8] ^= (uint64_t)t << 8 * (j % 8);
@@ -2259,14 +2299,15 @@ for (unsigned int b = 0; b < nbatch; b++) {
 }
 
 static void shake_key_mu(hls::stream<uint8_t> &out,
-                     hls::stream<uint8_t> &in1, hls::stream<uint8_t> &in2)
+                     hls::stream<uint8_t> &in1, hls::stream<uint8_t> &in2,
+                     hls::stream<uint8_t> &in_rnd)
 {
 
     uint64_t s[25];
 #pragma HLS ARRAY_PARTITION variable=s complete
     unsigned int pos = 0;
     keccak_init(s);
-    keccak_absorb_key_mu(s, in1, in2);
+    keccak_absorb_key_mu(s, in1, in2, in_rnd);
     pos = SEEDBYTES + CRHBYTES + RNDBYTES;
     keccak_finalize(s, pos, SHAKE256_RATE, 1);
     keccak_squeeze(out, CRHBYTES, s, pos, SHAKE256_RATE);
@@ -2838,7 +2879,7 @@ else {
 }
 
 static void dataflow(uint8_t *ret, uint8_t *sig,
-                 uint8_t *mu_0, uint8_t *mu_1, uint8_t *sk,
+                 uint8_t *mu_0, uint8_t *mu_1, uint8_t *sk, uint8_t *rnd,
                  unsigned int n, uint16_t nonce, unsigned int &done)
 {
 #pragma HLS INLINE OFF
@@ -2883,6 +2924,8 @@ static hls::stream<int32_t> s_s2_t_r("s_s2_t_r");
 #pragma HLS STREAM variable=s_s2_t_r depth=paramk*paramn*2
 static hls::stream<uint8_t> s_mu_0("s_mu_0");
 #pragma HLS STREAM variable=s_mu_0 depth=500*2
+static hls::stream<uint8_t> s_rnd("s_rnd");
+#pragma HLS STREAM variable=s_rnd depth=RNDBYTES*2
 static hls::stream<uint8_t> s_mu_1("s_mu_1");
 #pragma HLS STREAM variable=s_mu_1 depth=500*2
 static hls::stream<uint8_t> s_mu_1_r("s_mu_1_r");
@@ -3020,7 +3063,8 @@ unpack_sk(s_rho, s_key, s_t0, s_s1, s_s2, s_sk);
 
 
 readmemVer(s_mu_0, mu_0, CRHBYTES);
-shake_key_mu(s_rhoprime, s_key, s_mu_0);
+readmemVer(s_rnd, rnd, RNDBYTES);
+shake_key_mu(s_rhoprime, s_key, s_mu_0, s_rnd);
 
 make_seed(s_seed, s_rho); // no share and see the config
 make_buf(s_mat_buf, s_seed); // no share
@@ -3113,14 +3157,14 @@ write_discard(ret, sig,
 
 extern "C" {
 void k_sign(uint8_t *ret, uint8_t *sig, uint8_t *mu, uint8_t *mu2,
-        uint8_t *sk)
+        uint8_t *sk, uint8_t *rnd)
 {
 unsigned int n = 0;
 uint16_t nonce = 0;
 while (n < 1) {
 #pragma HLS PIPELINE OFF
     unsigned int done;
-    dataflow(ret, sig, mu, mu2, sk, n, nonce, done);
+    dataflow(ret, sig, mu, mu2, sk, rnd, n, nonce, done);
     nonce += 1;
     n += done;
 }
@@ -3129,18 +3173,21 @@ while (n < 1) {
 
 
 
-void mldsa_accelerator(unsigned char kem_cfg, 
+void mldsa_accelerator(unsigned char kem_cfg,
                     uint8_t *ret_out,
                     uint8_t *sign_out,
                     uint8_t *sign_in,
                     uint8_t *mu_processed_in,
-                    uint8_t *mu_orig_in,                    
+                    uint8_t *mu_orig_in,
                     uint8_t *mu2_processed_in,
                     uint8_t *sk_in,
                     uint8_t *pk_in,
                     int *ver_out,
-                    size_t mlen_in)
-                    
+                    size_t mlen_in,
+                    uint8_t *rnd_in,
+                    uint8_t *ctx_in,
+                    uint8_t ctxlen_in)
+
 
 {
 
@@ -3149,6 +3196,8 @@ void mldsa_accelerator(unsigned char kem_cfg,
     #pragma HLS INTERFACE m_axi port=sign_in   		depth=2620    	offset=slave bundle=gmemsign
     #pragma HLS INTERFACE m_axi port=mu_orig_in 	depth=2600    	offset=slave bundle=gmemm
     #pragma HLS INTERFACE m_axi port=pk_in          depth=2600 		offset=slave bundle=gmempk
+    // FIPS 204 Algorithm 3 context string, ML-DSA.Verify(pk, M, sigma, ctx); see k_verify/make_mprime.
+    #pragma HLS INTERFACE m_axi port=ctx_in         depth=255       offset=slave bundle=gmemctx
 
 
     //Signature
@@ -3157,7 +3206,11 @@ void mldsa_accelerator(unsigned char kem_cfg,
     #pragma HLS INTERFACE m_axi port=mu_processed_in    depth=64	offset=slave bundle=gmemm
     #pragma HLS INTERFACE m_axi port=mu2_processed_in   depth=64	offset=slave bundle=gmempk
     #pragma HLS INTERFACE m_axi port=sk_in              depth=2628	offset=slave bundle=gmemsk
- 
+    // FIPS 204 Algorithm 7 rnd, ML-DSA.Sign_internal step 7; RNDBYTES=32. All-zero
+    // reproduces the previous hardcoded-deterministic behavior (Algorithm 2 step 5's
+    // permitted deterministic variant); non-zero enables genuine hedged signing.
+    #pragma HLS INTERFACE m_axi port=rnd_in             depth=32	offset=slave bundle=gmemrnd
+
 
 
 
@@ -3169,22 +3222,25 @@ void mldsa_accelerator(unsigned char kem_cfg,
     #pragma HLS INTERFACE s_axilite port=mu_processed_in    bundle=control
     #pragma HLS INTERFACE s_axilite port=mu2_processed_in   bundle=control
     #pragma HLS INTERFACE s_axilite port=sk_in              bundle=control
+    #pragma HLS INTERFACE s_axilite port=rnd_in             bundle=control
 
 
     #pragma HLS INTERFACE s_axilite port=ver_out            bundle=control
     #pragma HLS INTERFACE s_axilite port=sign_in            bundle=control
     #pragma HLS INTERFACE s_axilite port=mu_orig_in         bundle=control
     #pragma HLS INTERFACE s_axilite port=pk_in              bundle=control
-    
+    #pragma HLS INTERFACE s_axilite port=ctx_in             bundle=control
+    #pragma HLS INTERFACE s_axilite port=ctxlen_in          bundle=control
+
     #pragma HLS INTERFACE s_axilite port=mlen_in            bundle=control
 
     #pragma HLS INTERFACE s_axilite port=kem_cfg            bundle=control
     #pragma HLS INTERFACE s_axilite port=return             bundle=control
 
     if(kem_cfg == 0){
-        k_sign(ret_out, sign_out, mu_processed_in, mu2_processed_in, sk_in);
+        k_sign(ret_out, sign_out, mu_processed_in, mu2_processed_in, sk_in, rnd_in);
     } else {
-        k_verify(ver_out, sign_in, mu_orig_in, mlen_in, pk_in);
+        k_verify(ver_out, sign_in, mu_orig_in, mlen_in, pk_in, ctx_in, ctxlen_in);
     }
 }
 

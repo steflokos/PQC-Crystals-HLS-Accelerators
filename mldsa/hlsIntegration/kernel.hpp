@@ -108,15 +108,18 @@
 #define QINV 58728449 // q^(-1) mod 2^32
 
 
-void mldsa_accelerator(unsigned char kem_cfg, 
+void mldsa_accelerator(unsigned char kem_cfg,
                     uint8_t *ret_out,
                     uint8_t *sign_out,
                     uint8_t *sign_in,
                     uint8_t *mu_processed_in,
-                    uint8_t *mu_orig_in,                    
+                    uint8_t *mu_orig_in,
                     uint8_t *mu2_processed_in,
                     uint8_t *sk_in,
                     uint8_t *pk_in,
                     int *ver_out,
-                    size_t mlen_in);               
+                    size_t mlen_in,
+                    uint8_t *rnd_in,
+                    uint8_t *ctx_in,
+                    uint8_t ctxlen_in);
 #endif
