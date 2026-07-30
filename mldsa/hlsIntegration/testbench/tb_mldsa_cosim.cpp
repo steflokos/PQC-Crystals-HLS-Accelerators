@@ -1,14 +1,15 @@
-// HLS C-simulation testbench for the FIPS 204 compliance changes (ctx in k_verify,
-// real rnd wiring in k_sign/dataflow). Validated against official NIST ACVP-Server
-// ML-DSA-44 KAT vectors (see gen_vectors.py for provenance).
-//
-// Runs entirely as plain C++ - no board, no Vivado, no Vitis SW workspace.
+// HLS C/RTL co-simulation testbench for the FIPS 204 compliance changes (ctx in
+// k_verify, real rnd wiring in k_sign/dataflow). Reduced vector set (one case per
+// structurally distinct code path) - full 45-vector algorithmic coverage already
+// exists via tb_mldsa.cpp/csim; this validates the HLS-scheduled RTL against the
+// same C model instead, which is a per-code-path, not per-vector, concern.
+// See gen_vectors.py --reduced for case selection rationale.
 
 #include <cstdio>
 #include <cstring>
 #include "../kernel.hpp"
 #include "tb_axi_depths.h"
-#include "tb_vectors.h"
+#include "tb_vectors_cosim.h"
 
 static int run_verify_cases()
 {
@@ -94,7 +95,7 @@ static int run_sign_cases()
 
 int main()
 {
-    printf("=== ML-DSA-44 FIPS204-compliance testbench (NIST ACVP KAT vectors) ===\n");
+    printf("=== ML-DSA-44 FIPS204-compliance COSIM testbench (reduced NIST ACVP vectors) ===\n");
     printf("-- Verify (ctx domain separation), %u cases --\n", (unsigned)VER_CASES_COUNT);
     int ver_fails = run_verify_cases();
 

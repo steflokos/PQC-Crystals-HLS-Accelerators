@@ -1323,10 +1323,29 @@ void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk,
 
     static hls::stream<uint8_t> s_mu_pre("s_mu_pre");
 #pragma HLS STREAM variable=s_mu_pre depth=200
+    /*
+     * depth=200 was insufficient for realistic message lengths: s_mu_mrg carries
+     * TRBYTES + 2 + ctxlen + mlen bytes (previously TRBYTES + mlen, pre-existing
+     * even before the ctx fix), and s_m carries mlen bytes directly. Plain
+     * csim_design's simplified stream model never enforces the declared depth, so
+     * this was never caught there; cosim_design's more hardware-accurate model
+     * does enforce it and silently corrupts output once traffic exceeds the
+     * declared depth.
+     *
+     * Production message-size bound: 1024 bytes (chosen for automotive/aerospace
+     * use - typical direct-signed protocol/telemetry messages are well under this;
+     * larger content is expected to be pre-hashed externally and signed as a
+     * digest, per FIPS 204 Section 5.4's own HashML-DSA/"pre-hash" guidance,
+     * rather than streamed through this port). Sized here for TRBYTES(64) + 2 +
+     * max ctx(255) + max mlen(1024) = 1345, rounded up with margin. Must stay
+     * consistent with mu_orig_in's m_axi depth below, testbench/tb_axi_depths.h,
+     * and gen_vectors.py's M_AXI_DEPTH["msg"] - see README.md's "Known finding"
+     * section for the full rationale and re-sizing checklist.
+     */
     static hls::stream<uint8_t> s_mu_mrg("s_mu_mrg");
-#pragma HLS STREAM variable=s_mu_mrg depth=200
+#pragma HLS STREAM variable=s_mu_mrg depth=1408
     static hls::stream<uint8_t> s_m("s_m");
-#pragma HLS STREAM variable=s_m depth=200
+#pragma HLS STREAM variable=s_m depth=1024
     static hls::stream<uint8_t> s_ctx("s_ctx");
 #pragma HLS STREAM variable=s_ctx depth=255
     static hls::stream<uint8_t> s_mu("s_mu");
@@ -3194,7 +3213,14 @@ void mldsa_accelerator(unsigned char kem_cfg,
     //VERIFICATION
     #pragma HLS INTERFACE m_axi port=ver_out   		depth=64       	offset=slave bundle=gmemout
     #pragma HLS INTERFACE m_axi port=sign_in   		depth=2620    	offset=slave bundle=gmemsign
-    #pragma HLS INTERFACE m_axi port=mu_orig_in 	depth=2600    	offset=slave bundle=gmemm
+    // mu_orig_in carries the raw message m (mlen bytes), not a fixed-size field - the
+    // original depth=2600 (sized for CRYPTO_BYTES-scale data, unrelated to real message
+    // length) silently truncated cosim's AXI transfer for any message over 2600 bytes,
+    // corrupting mu computation for longer messages (confirmed against NIST ACVP
+    // vectors). Production bound: 1024 bytes - see the s_mu_mrg/s_m comment above and
+    // README.md's "Known finding" section for the automotive/aerospace sizing rationale
+    // and the full list of places this must stay consistent with.
+    #pragma HLS INTERFACE m_axi port=mu_orig_in 	depth=1024    	offset=slave bundle=gmemm
     #pragma HLS INTERFACE m_axi port=pk_in          depth=2600 		offset=slave bundle=gmempk
     // FIPS 204 Algorithm 3 context string, ML-DSA.Verify(pk, M, sigma, ctx); see k_verify/make_mprime.
     #pragma HLS INTERFACE m_axi port=ctx_in         depth=255       offset=slave bundle=gmemctx
