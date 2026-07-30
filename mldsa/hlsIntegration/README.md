@@ -61,3 +61,28 @@ Both changes were validated via HLS C-simulation (`csim_design`) against the off
 verify with non-trivial `context` values (including negative/malformed signatures,
 correctly rejected), and sign with both `rnd = 0` and real hedged `rnd` values, each
 checked for a byte-exact signature match against the NIST-published expected output.
+
+### Running the testbench
+
+The testbench (`testbench/tb_mldsa.cpp`) runs entirely as HLS C-simulation - no board,
+no Vivado project, no Vitis SW workspace required. Two things are gitignored and must
+be (re)generated locally before it will build: the downloaded NIST vectors and the
+generated `tb_vectors.h` header.
+
+```sh
+cd mldsa/hlsIntegration/testbench
+./fetch_vectors.sh        # downloads the official NIST ACVP-Server ML-DSA KAT vectors
+python3 gen_vectors.py    # writes tb_vectors.h, stdlib only
+
+cd ..
+vitis-run --mode hls --tcl scripts/mldsa2_csim.tcl
+```
+
+Expect the run to end with:
+
+```
+=== Result: 15/15 verify cases OK, 30/30 sign cases OK ===
+INFO: [SIM 211-1] CSim done with 0 errors.
+```
+
+Tested with Vitis HLS 2024.2 paired with Vivado 2024.2

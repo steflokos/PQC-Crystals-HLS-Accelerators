@@ -1,0 +1,11 @@
+# Vitis HLS project/build output
+mldsa/hlsIntegration/mldsa/
+mldsa/hlsIntegration/mldsa_test/
+mlkem/hlsIntegration/mlkem*/
+**/hlsIntegration/logs/
+*.log
+
+# Testbench: generated header + downloaded NIST vectors (regenerate via
+# testbench/fetch_vectors.sh + testbench/gen_vectors.py - see README)
+**/testbench/tb_vectors.h
+**/testbench/vectors/
