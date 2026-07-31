@@ -16,8 +16,11 @@
 
 #define AXI_DEPTH_RET_OUT   64    // uint8_t* ret_out
 #define AXI_DEPTH_SIGN      2620  // uint8_t* sign_out, sign_in
-#define AXI_DEPTH_MU        64    // uint8_t* mu_processed_in, mu2_processed_in
-#define AXI_DEPTH_MU_ORIG   1024  // uint8_t* mu_orig_in (production bound - see README.md "Known finding")
+// mu_orig_in (verify) and sign_m_in (sign) both carry a raw message and share this
+// same production bound (see README.md "Known finding") - k_sign derives tr/M'/mu
+// on-chip now, same as k_verify, so both ports are sized identically.
+#define AXI_DEPTH_MU_ORIG   1024  // uint8_t* mu_orig_in
+#define AXI_DEPTH_SIGN_M    1024  // uint8_t* sign_m_in
 #define AXI_DEPTH_SK        2628  // uint8_t* sk_in
 #define AXI_DEPTH_PK        2600  // uint8_t* pk_in
 #define AXI_DEPTH_VER_OUT   64    // int*     ver_out (64 ints, not 64 bytes)

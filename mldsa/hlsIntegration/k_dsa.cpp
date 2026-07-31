@@ -1290,11 +1290,11 @@ void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk,
     static hls::stream<int32_t> s_t1("s_t1");
 #pragma HLS STREAM variable=s_t1 depth=1000
     static hls::stream<int32_t> s_t1_s("s_t1_s");
-#pragma HLS STREAM variable=s_t1_s depth=5000
+#pragma HLS STREAM variable=s_t1_s depth=paramk*paramn
     static hls::stream<int32_t> s_t1_t("s_t1_t");
-#pragma HLS STREAM variable=s_t1_t depth=5000
+#pragma HLS STREAM variable=s_t1_t depth=paramk*paramn
     static hls::stream<int32_t> s_t1_m("s_t1_m");
-#pragma HLS STREAM variable=s_t1_m depth=5000
+#pragma HLS STREAM variable=s_t1_m depth=paramk*paramn
 
     static hls::stream<uint8_t> s_sig("s_sig");
 #pragma HLS STREAM variable=s_sig depth=1000
@@ -1307,14 +1307,14 @@ void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk,
     static hls::stream<uint8_t> s_c_1("s_c_1");
 #pragma HLS STREAM variable=s_c_1 depth=200
     static hls::stream<int32_t> s_z("s_z");
-#pragma HLS STREAM variable=s_z depth=5000
+#pragma HLS STREAM variable=s_z depth=paraml*paramn
     static hls::stream<int32_t> s_h("s_h");
-#pragma HLS STREAM variable=s_h depth=5000
+#pragma HLS STREAM variable=s_h depth=paramk*paramn
 
     static hls::stream<int32_t> s_z_0("s_z_0");
-#pragma HLS STREAM variable=s_z_0 depth=5000
+#pragma HLS STREAM variable=s_z_0 depth=paraml*paramn
     static hls::stream<int32_t> s_z_1("s_z_1");
-#pragma HLS STREAM variable=s_z_1 depth=5000
+#pragma HLS STREAM variable=s_z_1 depth=paraml*paramn
 
     static hls::stream<int>     s_ver_pre_1("s_ver_pre_1");
 #pragma HLS STREAM variable=s_ver_pre_1 depth=100
@@ -1361,33 +1361,33 @@ void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk,
     static hls::stream<uint8_t> s_seed("s_seed");
 #pragma HLS STREAM variable=s_seed depth=3000
     static hls::stream<int32_t> s_mat("s_mat");
-#pragma HLS STREAM variable=s_mat depth=10000
+#pragma HLS STREAM variable=s_mat depth=paramk*paraml*paramn
 
     static hls::stream<int32_t> s_z_t("s_z_t");
-#pragma HLS STREAM variable=s_z_t depth=5000
+#pragma HLS STREAM variable=s_z_t depth=paraml*paramn
     static hls::stream<int32_t> s_z_r("s_z_r");
-#pragma HLS STREAM variable=s_z_r depth=5000
+#pragma HLS STREAM variable=s_z_r depth=paraml*paramn
     static hls::stream<int32_t> s_w1_m("s_w1_m");
-#pragma HLS STREAM variable=s_w1_m depth=5000
+#pragma HLS STREAM variable=s_w1_m depth=paramk*paramn
     static hls::stream<int32_t> s_w1("s_w1");
-#pragma HLS STREAM variable=s_w1 depth=5000
+#pragma HLS STREAM variable=s_w1 depth=paramk*paramn
     static hls::stream<int32_t> s_w1_s("s_w1_s");
-#pragma HLS STREAM variable=s_w1_s depth=5000
+#pragma HLS STREAM variable=s_w1_s depth=paramk*paramn
     static hls::stream<int32_t> s_w1_r("s_w1_r");
-#pragma HLS STREAM variable=s_w1_r depth=5000
+#pragma HLS STREAM variable=s_w1_r depth=paramk*paramn
     static hls::stream<int32_t> s_w1_i("s_w1_i");
-#pragma HLS STREAM variable=s_w1_i depth=5000
+#pragma HLS STREAM variable=s_w1_i depth=paramk*paramn
     static hls::stream<int32_t> s_w1_f("s_w1_f");
-#pragma HLS STREAM variable=s_w1_f depth=5000
+#pragma HLS STREAM variable=s_w1_f depth=paramk*paramn
     static hls::stream<int32_t> s_w1_c("s_w1_c");
-#pragma HLS STREAM variable=s_w1_c depth=5000
+#pragma HLS STREAM variable=s_w1_c depth=paramk*paramn
     static hls::stream<int32_t> s_w1_h("s_w1_h");
-#pragma HLS STREAM variable=s_w1_h depth=5000
+#pragma HLS STREAM variable=s_w1_h depth=paramk*paramn
 
     static hls::stream<uint8_t> s_buf("s_buf");
-#pragma HLS STREAM variable=s_buf depth=5000
+#pragma HLS STREAM variable=s_buf depth=paramk*POLYW1_PACKEDBYTES
     static hls::stream<uint8_t> s_mubuf("s_mubuf");
-#pragma HLS STREAM variable=s_mubuf depth=5000
+#pragma HLS STREAM variable=s_mubuf depth=crhbytes+paramk*POLYW1_PACKEDBYTES
     static hls::stream<uint8_t> s_c2("s_c2");
 #pragma HLS STREAM variable=s_c2 depth=200
     static hls::stream<ap_uint<1>> s_signal("s_signal");
@@ -1402,6 +1402,15 @@ void k_verify(int *ver, uint8_t *sig, uint8_t *m, size_t mlen, uint8_t *pk,
      * Stream declaration end
      */
 #pragma HLS DATAFLOW
+    // NOT hardware-shared: HLS clones each of the 3 shakeVer call sites below
+    // into a distinct specialized function, regardless of an ALLOCATION
+    // pragma or of normalizing every argument through `volatile` locals and
+    // matching input-stream depths (both tried, neither prevented the
+    // cloning - the second attempt cost +3.3K LUT with zero sharing benefit
+    // and was reverted). Very likely inherent to #pragma HLS DATAFLOW itself
+    // - each call site probably has to be a distinct schedulable node - not
+    // just an argument-matching problem. See README.md "Known finding:
+    // resource utilization" for the full history.
 
     readmemVer(s_pk, pk, CRYPTO_PUBLICKEYBYTES);
     duplicateVer(s_pk_0, s_pk_1, s_pk, CRYPTO_PUBLICKEYBYTES);
@@ -1794,6 +1803,7 @@ for (unsigned int t = 0; t < times; t++) {
 static void unpack_sk(hls::stream<uint8_t> &s_rho,
                   hls::stream<uint8_t> &s_key, hls::stream<int32_t> &s_t0,
                   hls::stream<int32_t> &s_s1, hls::stream<int32_t> &s_s2,
+                  hls::stream<uint8_t> &s_tr,
                   hls::stream<uint8_t> &s_sk)
 {
     for (unsigned int i = 0; i < SEEDBYTES; i++) {
@@ -1804,9 +1814,14 @@ static void unpack_sk(hls::stream<uint8_t> &s_rho,
 #pragma HLS PIPELINE II=1
         s_key << s_sk.read();
     }
+    // tr = CRH(pk), FIPS 204's sk = rho || K || tr || s1 || s2 || t0 (Algorithm 6).
+    // Previously discarded here since k_sign took a pre-computed mu as an opaque
+    // input and never needed tr on-chip; now routed out so dataflow() can build
+    // M' = 0x00 || len(ctx) || ctx || M and derive mu = H(tr || M', 64) itself
+    // (Algorithm 8, step 7), matching what k_verify already does for the same tr.
     for (unsigned int i = 0; i < TRBYTES; i++) {
 #pragma HLS PIPELINE II=1
-        uint8_t discard = s_sk.read();
+        s_tr << s_sk.read();
     }
     eta_unpack(s_s1, s_sk, L);
     eta_unpack(s_s2, s_sk, K);
@@ -2343,6 +2358,23 @@ static void shake_mu_p(hls::stream<uint8_t> &out,
     pos = (CRHBYTES + K * POLYW1_PACKEDBYTES) % SHAKE256_RATE;
     keccak_finalize(s, pos, SHAKE256_RATE, 0);
     keccak_squeeze(out, CTILDEBYTES, s, pos, SHAKE256_RATE);
+}
+
+// mu = H(tr || M', 64), FIPS 204 Algorithm 8 step 7 - the sign-path counterpart of
+// k_verify's shakeVer(s_mu, CRHBYTES, s_mu_mrg, TRBYTES+2+ctxlen+mlen, SHAKE256_RATE, 0)
+// call. Mirrors shakeVer's structure exactly but built from this file's non-Ver
+// (sign-path) keccak_* primitives, since keccak_absorb takes a runtime-length stream
+// just like keccak_absorbVer does.
+static void shake_sign_mprime(hls::stream<uint8_t> &out, unsigned int outlen,
+                           hls::stream<uint8_t> &in, unsigned int inlen)
+{
+    uint64_t s[25];
+#pragma HLS ARRAY_PARTITION variable=s complete
+    unsigned int pos = 0;
+    keccak_init(s);
+    keccak_absorb(s, pos, SHAKE256_RATE, in, inlen);
+    keccak_finalize(s, pos, SHAKE256_RATE, 0);
+    keccak_squeeze(out, outlen, s, pos, SHAKE256_RATE);
 }
 
 //This can be optimized to save SEEDBYTS cycles
@@ -2898,7 +2930,8 @@ else {
 }
 
 static void dataflow(uint8_t *ret, uint8_t *sig,
-                 uint8_t *mu_0, uint8_t *mu_1, uint8_t *sk, uint8_t *rnd,
+                 uint8_t *m, size_t mlen, uint8_t *ctx, uint8_t ctxlen,
+                 uint8_t *sk, uint8_t *rnd,
                  unsigned int n, uint16_t nonce, unsigned int &done)
 {
 #pragma HLS INLINE OFF
@@ -2912,35 +2945,49 @@ static hls::stream<uint8_t> s_rho("s_rho");
 static hls::stream<uint8_t> s_key("s_key");
 #pragma HLS STREAM variable=s_key depth=seedbytes+2*2
 static hls::stream<int32_t> s_t0("s_t0");
-#pragma HLS STREAM variable=s_t0 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_t0 depth=paramk*paramn
 static hls::stream<int32_t> s_s1("s_s1");
-#pragma HLS STREAM variable=s_s1 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_s1 depth=paramk*paramn
 static hls::stream<int32_t> s_s2("s_s2");
-#pragma HLS STREAM variable=s_s2 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_s2 depth=paramk*paramn
 static hls::stream<uint8_t> s_mu("s_mu");
 #pragma HLS STREAM variable=s_mu depth=crhbytes+2*2
 static hls::stream<uint8_t> s_rhoprime("s_rhoprime");
 #pragma HLS STREAM variable=s_rhoprime depth=crhbytes+2*2
+// tr/M'/mu on-chip derivation (FIPS 204 Algorithm 2's message formatting, mirroring
+// k_verify's s_tr/s_mu_mrg/s_mu - see unpack_sk and shake_sign_mprime). Depths match
+// k_verify's own sizing exactly: TRBYTES(64) for tr, 1024/255 for the production
+// message/ctx bounds (see README.md "Known finding"), 1408 for M' = TRBYTES+2+ctx+msg.
+static hls::stream<uint8_t> s_tr("s_tr");
+#pragma HLS STREAM variable=s_tr depth=TRBYTES
+static hls::stream<uint8_t> s_m_sign("s_m_sign");
+#pragma HLS STREAM variable=s_m_sign depth=1024
+static hls::stream<uint8_t> s_ctx_sign("s_ctx_sign");
+#pragma HLS STREAM variable=s_ctx_sign depth=255
+static hls::stream<uint8_t> s_mu_mrg_sign("s_mu_mrg_sign");
+#pragma HLS STREAM variable=s_mu_mrg_sign depth=1408
+static hls::stream<uint8_t> s_mu_computed("s_mu_computed");
+#pragma HLS STREAM variable=s_mu_computed depth=CRHBYTES
 static hls::stream<uint8_t> s_seed("s_seed");
 #pragma HLS STREAM variable=s_seed depth=3000
 static hls::stream<ap_uint<24>> s_mat_buf("s_mat_buf");
 #pragma HLS STREAM variable=s_mat_buf depth=500*2
 static hls::stream<int32_t> s_mat("s_mat");
-#pragma HLS STREAM variable=s_mat depth=paramk*paraml*paramn*2
+#pragma HLS STREAM variable=s_mat depth=paramk*paraml*paramn
 static hls::stream<int32_t> s_mat_r("s_mat_r");
-#pragma HLS STREAM variable=s_mat_r depth=paramk*paraml*paramn*2
+#pragma HLS STREAM variable=s_mat_r depth=paramk*paraml*paramn
 static hls::stream<int32_t> s_t0_t("s_t0_t");
-#pragma HLS STREAM variable=s_t0_t depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_t0_t depth=paramk*paramn
 static hls::stream<int32_t> s_s1_t("s_s1_t");
-#pragma HLS STREAM variable=s_s1_t depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_s1_t depth=paraml*paramn
 static hls::stream<int32_t> s_s2_t("s_s2_t");
-#pragma HLS STREAM variable=s_s2_t depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_s2_t depth=paramk*paramn
 static hls::stream<int32_t> s_t0_t_r("s_t0_t_r");
-#pragma HLS STREAM variable=s_t0_t_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_t0_t_r depth=paramk*paramn
 static hls::stream<int32_t> s_s1_t_r("s_s1_t_r");
-#pragma HLS STREAM variable=s_s1_t_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_s1_t_r depth=paramk*paramn
 static hls::stream<int32_t> s_s2_t_r("s_s2_t_r");
-#pragma HLS STREAM variable=s_s2_t_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_s2_t_r depth=paramk*paramn
 static hls::stream<uint8_t> s_mu_0("s_mu_0");
 #pragma HLS STREAM variable=s_mu_0 depth=500*2
 static hls::stream<uint8_t> s_rnd("s_rnd");
@@ -2956,35 +3003,35 @@ static hls::stream<ap_uint<16>> s_seed_gamma("s_seed_gamma");
 static hls::stream<ap_uint<32>> s_buf_gamma("s_buf_gamma");
 #pragma HLS STREAM variable=s_buf_gamma depth=3*paramn*2
 static hls::stream<int32_t> s_y("s_y");
-#pragma HLS STREAM variable=s_y depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_y depth=paraml*paramn
 static hls::stream<int32_t> s_y_1("s_y_1");
-#pragma HLS STREAM variable=s_y_1 depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_y_1 depth=paraml*paramn
 static hls::stream<int32_t> s_z("s_z");
-#pragma HLS STREAM variable=s_z depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z depth=paraml*paramn
 static hls::stream<int32_t> s_z_t("s_z_t");
-#pragma HLS STREAM variable=s_z_t depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_t depth=paraml*paramn
 static hls::stream<int32_t> s_z_rl("s_z_rl");
-#pragma HLS STREAM variable=s_z_rl depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_rl depth=paraml*paramn
 static hls::stream<int32_t> s_w1_m("s_w1_m");
-#pragma HLS STREAM variable=s_w1_m depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_m depth=paramk*paramn
 static hls::stream<int32_t> s_w1("s_w1");
-#pragma HLS STREAM variable=s_w1 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1 depth=paramk*paramn
 static hls::stream<int32_t> s_w1_r("s_w1_r");
-#pragma HLS STREAM variable=s_w1_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_r depth=paramk*paramn
 static hls::stream<int32_t> s_w1_i("s_w1_i");
-#pragma HLS STREAM variable=s_w1_i depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_i depth=paramk*paramn
 static hls::stream<int32_t> s_w1_f("s_w1_f");
-#pragma HLS STREAM variable=s_w1_f depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_f depth=paramk*paramn
 static hls::stream<int32_t> s_w1_c("s_w1_c");
-#pragma HLS STREAM variable=s_w1_c depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_c depth=paramk*paramn
 static hls::stream<int32_t> s_w1_d("s_w1_d");
-#pragma HLS STREAM variable=s_w1_d depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_d depth=paramk*paramn
 static hls::stream<int32_t> s_w0("s_w0");
-#pragma HLS STREAM variable=s_w0 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w0 depth=paramk*paramn
 static hls::stream<int32_t> s_w1_d_0("s_w1_d_0");
-#pragma HLS STREAM variable=s_w1_d_0 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_d_0 depth=paramk*paramn
 static hls::stream<int32_t> s_w1_d_1("s_w1_d_0");
-#pragma HLS STREAM variable=s_w1_d_1 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w1_d_1 depth=paramk*paramn
 static hls::stream<uint8_t> s_p("s_p");
 #pragma HLS STREAM variable=s_p depth=500*2
 static hls::stream<uint8_t> s_mu_p("s_mu_p");
@@ -2998,71 +3045,71 @@ static hls::stream<uint8_t> s_sig_1("s_sig_1");
 static hls::stream<int32_t> s_cp("s_cp");
 #pragma HLS STREAM variable=s_cp depth=500*2
 static hls::stream<int32_t> s_cp_t("s_cp_t");
-#pragma HLS STREAM variable=s_cp_t depth=paramn*2
+#pragma HLS STREAM variable=s_cp_t depth=paramn
 static hls::stream<int32_t> s_cp_t_0("s_cp_t_0");
-#pragma HLS STREAM variable=s_cp_t_0 depth=paramn*2
+#pragma HLS STREAM variable=s_cp_t_0 depth=paramn
 static hls::stream<int32_t> s_cp_t_0_r("s_cp_t_0_r");
-#pragma HLS STREAM variable=s_cp_t_0_r depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_cp_t_0_r depth=paraml*paramn
 static hls::stream<int32_t> s_cp_t_1("s_cp_t_1");
-#pragma HLS STREAM variable=s_cp_t_1 depth=paramn*2
+#pragma HLS STREAM variable=s_cp_t_1 depth=paramn
 static hls::stream<int32_t> s_cp_t_1_r("s_cp_t_1_r");
-#pragma HLS STREAM variable=s_cp_t_1_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_cp_t_1_r depth=paramk*paramn
 static hls::stream<int32_t> s_cp_t_2("s_cp_t_2");
-#pragma HLS STREAM variable=s_cp_t_2 depth=paramn*2
+#pragma HLS STREAM variable=s_cp_t_2 depth=paramn
 static hls::stream<int32_t> s_cp_t_2_r("s_cp_t_2_r");
-#pragma HLS STREAM variable=s_cp_t_2_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_cp_t_2_r depth=paramk*paramn
 static hls::stream<int32_t> s_z_m("s_z_m");
-#pragma HLS STREAM variable=s_z_m depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_m depth=paraml*paramn
 static hls::stream<int32_t> s_z_i("s_z_i");
-#pragma HLS STREAM variable=s_z_i depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_i depth=paraml*paramn
 static hls::stream<int32_t> s_z_f("s_z_f");
-#pragma HLS STREAM variable=s_z_f depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_f depth=paraml*paramn
 static hls::stream<int32_t> s_z_a("s_z_a");
-#pragma HLS STREAM variable=s_z_a depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_a depth=paraml*paramn
 static hls::stream<int32_t> s_z_r("s_z_r");
-#pragma HLS STREAM variable=s_z_r depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_r depth=paraml*paramn
 static hls::stream<int32_t> s_z_r_0("s_z_r_0");
-#pragma HLS STREAM variable=s_z_r_0 depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_r_0 depth=paraml*paramn
 static hls::stream<int32_t> s_z_r_1("s_z_r_1");
-#pragma HLS STREAM variable=s_z_r_1 depth=paraml*paramn*2
+#pragma HLS STREAM variable=s_z_r_1 depth=paraml*paramn
 static hls::stream<int> s_signal_z("s_signal_z");
 #pragma HLS STREAM variable=s_signal_z depth=100*2
 static hls::stream<int32_t> s_h_m("s_h_m");
-#pragma HLS STREAM variable=s_h_m depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_m depth=paramk*paramn
 static hls::stream<int32_t> s_h_i("s_h_i");
-#pragma HLS STREAM variable=s_h_i depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_i depth=paramk*paramn
 static hls::stream<int32_t> s_h_f("s_h_f");
-#pragma HLS STREAM variable=s_h_f depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_f depth=paramk*paramn
 static hls::stream<int32_t> s_w0_s("s_w0_s");
-#pragma HLS STREAM variable=s_w0_s depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w0_s depth=paramk*paramn
 static hls::stream<int32_t> s_w0_r("s_w0_r");
-#pragma HLS STREAM variable=s_w0_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w0_r depth=paramk*paramn
 static hls::stream<int32_t> s_w0_r_0("s_w0_r_0");
-#pragma HLS STREAM variable=s_w0_r_0 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w0_r_0 depth=paramk*paramn
 static hls::stream<int32_t> s_w0_r_1("s_w0_r_1");
-#pragma HLS STREAM variable=s_w0_r_1 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w0_r_1 depth=paramk*paramn
 static hls::stream<int> s_signal_w0("s_signal_w0");
 #pragma HLS STREAM variable=s_signal_w0 depth=100*2
 static hls::stream<int32_t> s_h_m_2("s_h_m_2");
-#pragma HLS STREAM variable=s_h_m_2 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_m_2 depth=paramk*paramn
 static hls::stream<int32_t> s_h_i_2("s_h_i_2");
-#pragma HLS STREAM variable=s_h_i_2 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_i_2 depth=paramk*paramn
 static hls::stream<int32_t> s_h_f_2("s_h_f_2");
-#pragma HLS STREAM variable=s_h_f_2 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_f_2 depth=paramk*paramn
 static hls::stream<int32_t> s_h_r("s_h_r");
-#pragma HLS STREAM variable=s_h_r depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_r depth=paramk*paramn
 static hls::stream<int32_t> s_h_r_0("s_h_r_0");
-#pragma HLS STREAM variable=s_h_r_0 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_r_0 depth=paramk*paramn
 static hls::stream<int32_t> s_h_r_1("s_h_r_1");
-#pragma HLS STREAM variable=s_h_r_1 depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_r_1 depth=paramk*paramn
 static hls::stream<int> s_signal_h("s_signal_h");
 #pragma HLS STREAM variable=s_signal_h depth=100*2
 static hls::stream<int32_t> s_w0_a("s_w0_a");
-#pragma HLS STREAM variable=s_w0_a depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_w0_a depth=paramk*paramn
 static hls::stream<int> s_signal_n("s_signal_n");
 #pragma HLS STREAM variable=s_signal_n depth=100*2
 static hls::stream<int32_t> s_h_h("s_h_h");
-#pragma HLS STREAM variable=s_h_h depth=paramk*paramn*2
+#pragma HLS STREAM variable=s_h_h depth=paramk*paramn
 static hls::stream<uint8_t> s_sig_p("s_sig_p");
 #pragma HLS STREAM variable=s_sig_p depth=crypto*2
 static hls::stream<ap_uint<1>> s_signal_ch("s_signal_ch");
@@ -3078,10 +3125,18 @@ static hls::stream<ap_uint<1>> s_signal_rej("s_signal_rej");
 
 
 readmemVer(s_sk, sk, CRYPTO_SECRETKEYBYTES);
-unpack_sk(s_rho, s_key, s_t0, s_s1, s_s2, s_sk);
+unpack_sk(s_rho, s_key, s_t0, s_s1, s_s2, s_tr, s_sk);
 
+// mu = H(tr || M', 64), FIPS 204 Algorithm 2/8: M' = 0x00 || len(ctx) || ctx || M.
+// tr comes from sk (unpack_sk above), not from a separate hash of pk - sign_internal
+// already has tr stored in the secret key (Algorithm 6), unlike k_verify which must
+// compute tr = H(pk) fresh since verify never has more than the public key.
+readmemVer(s_m_sign, m, mlen);
+readmemVer(s_ctx_sign, ctx, ctxlen);
+make_mprime(s_mu_mrg_sign, s_tr, s_ctx_sign, s_m_sign, ctxlen, mlen);
+shake_sign_mprime(s_mu_computed, CRHBYTES, s_mu_mrg_sign, TRBYTES + 2 + ctxlen + mlen);
+duplicate(s_mu_0, s_mu_1, s_mu_computed, CRHBYTES);
 
-readmemVer(s_mu_0, mu_0, CRHBYTES);
 readmemVer(s_rnd, rnd, RNDBYTES);
 shake_key_mu(s_rhoprime, s_key, s_mu_0, s_rnd);
 
@@ -3125,7 +3180,8 @@ pdecompose(s_w1_d, s_w0, s_w1_c, K * NI);
 duplicateVer(s_w1_d_0, s_w1_d_1, s_w1_d, K * NI);
 packVer(s_p, s_w1_d_0, K);
 
-readmemVer(s_mu_1, mu_1, CRHBYTES);
+// s_mu_1 is populated on-chip now (see duplicate(s_mu_0, s_mu_1, ...) above),
+// not read from an external mu2 pointer.
 repeatg<CRHBYTES>(s_mu_1_r, s_mu_1);
 shake_mu_p(s_sig, s_mu_1_r, s_p); //check how to share all shakes
 
@@ -3175,15 +3231,15 @@ write_discard(ret, sig,
 }
 
 extern "C" {
-void k_sign(uint8_t *ret, uint8_t *sig, uint8_t *mu, uint8_t *mu2,
-        uint8_t *sk, uint8_t *rnd)
+void k_sign(uint8_t *ret, uint8_t *sig, uint8_t *m, size_t mlen,
+        uint8_t *ctx, uint8_t ctxlen, uint8_t *sk, uint8_t *rnd)
 {
 unsigned int n = 0;
 uint16_t nonce = 0;
 while (n < 1) {
 #pragma HLS PIPELINE OFF
     unsigned int done;
-    dataflow(ret, sig, mu, mu2, sk, rnd, n, nonce, done);
+    dataflow(ret, sig, m, mlen, ctx, ctxlen, sk, rnd, n, nonce, done);
     nonce += 1;
     n += done;
 }
@@ -3196,9 +3252,8 @@ void mldsa_accelerator(unsigned char kem_cfg,
                     uint8_t *ret_out,
                     uint8_t *sign_out,
                     uint8_t *sign_in,
-                    uint8_t *mu_processed_in,
+                    uint8_t *sign_m_in,
                     uint8_t *mu_orig_in,
-                    uint8_t *mu2_processed_in,
                     uint8_t *sk_in,
                     uint8_t *pk_in,
                     int *ver_out,
@@ -3222,15 +3277,24 @@ void mldsa_accelerator(unsigned char kem_cfg,
     // and the full list of places this must stay consistent with.
     #pragma HLS INTERFACE m_axi port=mu_orig_in 	depth=1024    	offset=slave bundle=gmemm
     #pragma HLS INTERFACE m_axi port=pk_in          depth=2600 		offset=slave bundle=gmempk
-    // FIPS 204 Algorithm 3 context string, ML-DSA.Verify(pk, M, sigma, ctx); see k_verify/make_mprime.
+    // ctx_in/ctxlen_in and mlen_in are shared between both branches (k_sign and
+    // k_verify each build their own M' = 0x00 || len(ctx) || ctx || M from these -
+    // see make_mprime, k_verify, and dataflow()); kem_cfg selects exactly one
+    // branch per invocation, so there is no real sharing conflict, same as
+    // ret_out/ver_out already sharing bundle=gmemout below.
     #pragma HLS INTERFACE m_axi port=ctx_in         depth=255       offset=slave bundle=gmemctx
 
 
     //Signature
     #pragma HLS INTERFACE m_axi port=ret_out         	depth=64    offset=slave bundle=gmemout
     #pragma HLS INTERFACE m_axi port=sign_out           depth=2620	offset=slave bundle=gmemsign
-    #pragma HLS INTERFACE m_axi port=mu_processed_in    depth=64	offset=slave bundle=gmemm
-    #pragma HLS INTERFACE m_axi port=mu2_processed_in   depth=64	offset=slave bundle=gmempk
+    // sign_m_in carries the raw message being signed (mlen_in bytes) - k_sign now
+    // derives tr (from sk_in), M', and mu on-chip itself (see unpack_sk/dataflow()),
+    // matching k_verify's architecture instead of taking a pre-hashed mu as an
+    // opaque input. Shares bundle=gmemm with mu_orig_in: sign and verify are
+    // mutually exclusive per kem_cfg, so this is the same one-physical-AXI-port
+    // sharing already used for ret_out/ver_out (bundle=gmemout).
+    #pragma HLS INTERFACE m_axi port=sign_m_in          depth=1024	offset=slave bundle=gmemm
     #pragma HLS INTERFACE m_axi port=sk_in              depth=2628	offset=slave bundle=gmemsk
     // FIPS 204 Algorithm 7 rnd, ML-DSA.Sign_internal step 7; RNDBYTES=32. All-zero
     // reproduces the previous hardcoded-deterministic behavior (Algorithm 2 step 5's
@@ -3245,8 +3309,7 @@ void mldsa_accelerator(unsigned char kem_cfg,
 
     #pragma HLS INTERFACE s_axilite port=ret_out            bundle=control
     #pragma HLS INTERFACE s_axilite port=sign_out           bundle=control
-    #pragma HLS INTERFACE s_axilite port=mu_processed_in    bundle=control
-    #pragma HLS INTERFACE s_axilite port=mu2_processed_in   bundle=control
+    #pragma HLS INTERFACE s_axilite port=sign_m_in          bundle=control
     #pragma HLS INTERFACE s_axilite port=sk_in              bundle=control
     #pragma HLS INTERFACE s_axilite port=rnd_in             bundle=control
 
@@ -3264,7 +3327,7 @@ void mldsa_accelerator(unsigned char kem_cfg,
     #pragma HLS INTERFACE s_axilite port=return             bundle=control
 
     if(kem_cfg == 0){
-        k_sign(ret_out, sign_out, mu_processed_in, mu2_processed_in, sk_in, rnd_in);
+        k_sign(ret_out, sign_out, sign_m_in, mlen_in, ctx_in, ctxlen_in, sk_in, rnd_in);
     } else {
         k_verify(ver_out, sign_in, mu_orig_in, mlen_in, pk_in, ctx_in, ctxlen_in);
     }

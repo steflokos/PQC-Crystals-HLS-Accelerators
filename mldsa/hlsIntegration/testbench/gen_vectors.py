@@ -10,11 +10,18 @@ script; it writes tb_vectors.h next to it. No third-party dependencies (stdlib o
 Selected groups:
   sigVer tgId=1  (external, pure, ML-DSA-44): pk, message, context, signature -> testPassed
       Exercises k_verify's fixed ctx/domain-separation path end-to-end.
-  sigGen tgId=7  (internal, deterministic=true,  ML-DSA-44): mu, sk -> signature
+  sigGen tgId=1  (external, deterministic=true,  ML-DSA-44): message, context, sk -> signature
       rnd is implicitly all-zero (Algorithm 2 step 5's deterministic substitution) -
-      exercises k_sign/dataflow() with the "kept off" default rnd behavior.
-  sigGen tgId=19 (internal, deterministic=false, ML-DSA-44): mu, rnd, sk -> signature
-      Exercises the new real rnd wiring with genuine hedged values.
+      exercises k_sign/dataflow()'s on-chip tr/M'/mu derivation (see
+      shake_sign_mprime in k_dsa.cpp) with the "kept off" default rnd behavior.
+  sigGen tgId=13 (external, deterministic=false, ML-DSA-44): message, context, rnd, sk -> signature
+      Same on-chip message-formatting path, with genuine hedged rnd values.
+
+Note: sigGen also has "internal" groups (tgId=7/19) that hand over a pre-computed
+mu instead of (message, context) - those tested the old mu_processed_in/mu2_processed_in
+interface, which no longer exists now that k_sign derives tr/M'/mu on-chip itself
+(matching k_verify's architecture); tgId=1/13 ("external") are the ones that
+actually exercise the message-formatting path, mirroring sigVer's own tgId=1.
 
 --reduced selects one case per structurally distinct code path instead of the full
 45 - used for RTL cosimulation, where full-vector csim coverage already exists and
@@ -22,13 +29,14 @@ cosim's job is validating the HLS schedule (a structural property), not re-check
 per-value algorithmic correctness:
   sigVer tc12 - valid signature, non-trivial ctx (accept path, ctx fix engaged)
   sigVer tc2  - invalid signature, non-trivial ctx (reject path, ctx fix engaged)
-  sigGen      - first deterministic (rnd=0) case + first hedged (real rnd) case
+  sigGen tc2  (tgId=1)  - deterministic (rnd=0), non-trivial ctx, fits the msg bound
+  sigGen tc182 (tgId=13) - hedged (real rnd), non-trivial ctx, fits the msg bound
 
 M_AXI_DEPTH["msg"] is the production message-size bound (see README.md's "Known
-finding" section), not NIST's own test-vector maximum - any sigVer case whose real
-message exceeds it is automatically excluded below (printed, not silently dropped)
-rather than padded/truncated, since accepting it would misrepresent what this
-configuration actually validates.
+finding" section), not NIST's own test-vector maximum - any sigVer or sigGen case
+whose real message exceeds it is automatically excluded below (printed, not
+silently dropped) rather than padded/truncated, since accepting it would
+misrepresent what this configuration actually validates.
 """
 import json
 from pathlib import Path
@@ -38,6 +46,8 @@ VECTORS = ROOT / "vectors"
 
 PARAM_SET = "ML-DSA-44"
 REDUCED_VER_TCIDS = (12, 2)  # accept (non-trivial ctx), reject (non-trivial ctx) - both <= 1024 bytes
+REDUCED_GEN_DET_TCID = 2      # tgId=1: deterministic, non-trivial ctx, <= 1024 bytes
+REDUCED_GEN_HEDGE_TCID = 182  # tgId=13: hedged, non-trivial ctx, <= 1024 bytes
 
 # Must match the "#pragma HLS INTERFACE m_axi port=... depth=..." values in
 # mldsa_accelerator's declaration (k_dsa.cpp). cosim's C-TB post-check reads up to
@@ -57,11 +67,10 @@ REDUCED_VER_TCIDS = (12, 2)  # accept (non-trivial ctx), reject (non-trivial ctx
 # in generate()).
 M_AXI_DEPTH = {
     "pk": 2600,    # pk_in
-    "msg": 1024,   # mu_orig_in - production bound, see README.md "Known finding"
+    "msg": 1024,   # mu_orig_in / sign_m_in - production bound, see README.md "Known finding"
     "ctx": 255,    # ctx_in
     "sig": 2620,   # sign_in / sign_out
     "sk": 2628,    # sk_in
-    "mu": 64,      # mu_processed_in / mu2_processed_in (exact match, no real padding needed)
     "rnd": 32,     # rnd_in (exact match, no real padding needed)
 }
 
@@ -114,30 +123,37 @@ def generate(out_path, reduced):
     ver_group = find_group(sigver_prompt, 1)
     ver_exp = index_expected(sigver_expected, 1)
 
-    gen_det_group = find_group(siggen_prompt, 7)
-    gen_det_exp = index_expected(siggen_expected, 7)
-    gen_hedge_group = find_group(siggen_prompt, 19)
-    gen_hedge_exp = index_expected(siggen_expected, 19)
+    gen_det_group = find_group(siggen_prompt, 1)
+    gen_det_exp = index_expected(siggen_expected, 1)
+    gen_hedge_group = find_group(siggen_prompt, 13)
+    gen_hedge_exp = index_expected(siggen_expected, 13)
 
     if reduced:
         ver_tests = [tc for tc in ver_group["tests"] if tc["tcId"] in REDUCED_VER_TCIDS]
-        gen_det_tests = gen_det_group["tests"][:1]
-        gen_hedge_tests = gen_hedge_group["tests"][:1]
+        gen_det_tests = [tc for tc in gen_det_group["tests"] if tc["tcId"] == REDUCED_GEN_DET_TCID]
+        gen_hedge_tests = [tc for tc in gen_hedge_group["tests"] if tc["tcId"] == REDUCED_GEN_HEDGE_TCID]
     else:
         ver_tests = ver_group["tests"]
         gen_det_tests = gen_det_group["tests"]
         gen_hedge_tests = gen_hedge_group["tests"]
 
-    # sigGen cases are unaffected by M_AXI_DEPTH["msg"]: dataflow()/k_sign never has a
-    # raw message flow through it (it takes a pre-computed mu), so only sigVer needs
-    # this filter. Exclude rather than pad/truncate - see module docstring.
+    # Exclude rather than pad/truncate any case whose real message exceeds the
+    # production message-size bound - see module docstring. Applies to both sigVer
+    # and sigGen now that k_sign also takes a raw message (on-chip tr/M'/mu
+    # derivation), not just sigVer.
     msg_limit = M_AXI_DEPTH["msg"]
-    fits = [tc for tc in ver_tests if len(tc["message"]) // 2 <= msg_limit]
-    excluded = [tc for tc in ver_tests if len(tc["message"]) // 2 > msg_limit]
-    if excluded:
-        print(f"  Excluding {len(excluded)} sigVer case(s) exceeding msg depth ({msg_limit} bytes): "
-              + ", ".join(f'tc{tc["tcId"]}({len(tc["message"]) // 2}B)' for tc in excluded))
-    ver_tests = fits
+
+    def filter_msg_limit(tests, label):
+        fits = [tc for tc in tests if len(tc["message"]) // 2 <= msg_limit]
+        excluded = [tc for tc in tests if len(tc["message"]) // 2 > msg_limit]
+        if excluded:
+            print(f"  Excluding {len(excluded)} {label} case(s) exceeding msg depth ({msg_limit} bytes): "
+                  + ", ".join(f'tc{tc["tcId"]}({len(tc["message"]) // 2}B)' for tc in excluded))
+        return fits
+
+    ver_tests = filter_msg_limit(ver_tests, "sigVer")
+    gen_det_tests = filter_msg_limit(gen_det_tests, "sigGen(det)")
+    gen_hedge_tests = filter_msg_limit(gen_hedge_tests, "sigGen(hedged)")
 
     lines = []
     lines.append("// AUTO-GENERATED by gen_vectors.py - do not edit by hand.")
@@ -194,24 +210,28 @@ def generate(out_path, reduced):
     ):
         for tc in tests:
             sk = hexbytes(tc["sk"])
-            mu = hexbytes(tc["mu"])
+            msg = hexbytes(tc["message"])
+            ctx = hexbytes(tc["context"])
             rnd = hexbytes(tc["rnd"]) if is_hedged else bytes(32)  # off-by-default: all-zero rnd
             sig = hexbytes(expected_map[tc["tcId"]]["signature"])  # not an m_axi pointer arg, no pad needed
 
             lines.append(c_array(f"sign_sk_{idx}", pad(sk, "sk")))
-            lines.append(c_array(f"sign_mu_{idx}", pad(mu, "mu")))
+            lines.append(c_array(f"sign_msg_{idx}", pad(msg, "msg")))
+            lines.append(c_array(f"sign_ctx_{idx}", pad(ctx, "ctx")))
             lines.append(c_array(f"sign_rnd_{idx}", pad(rnd, "rnd")))
             lines.append(c_array(f"sign_sig_{idx}", sig))
             label = f'sigGen tc{tc["tcId"]} ({"hedged" if is_hedged else "deterministic/rnd=0"})'
             sign_entries.append(
-                f'  {{ "{label}", {tc["tcId"]}, sign_sk_{idx}, sign_mu_{idx}, sign_rnd_{idx}, sign_sig_{idx} }},'
+                f'  {{ "{label}", {tc["tcId"]}, sign_sk_{idx}, sign_msg_{idx}, {len(msg)}, '
+                f'sign_ctx_{idx}, {len(ctx)}, sign_rnd_{idx}, sign_sig_{idx} }},'
             )
             idx += 1
 
     lines.append("struct SignCase {")
     lines.append("    const char *label; unsigned tcId;")
     lines.append("    const uint8_t *sk;")
-    lines.append("    const uint8_t *mu;")
+    lines.append("    const uint8_t *msg; unsigned mlen;")
+    lines.append("    const uint8_t *ctx; unsigned ctxlen;")
     lines.append("    const uint8_t *rnd;")
     lines.append("    const uint8_t *expected_sig;")
     lines.append("};")

@@ -18,8 +18,7 @@ static int run_verify_cases()
 
         uint8_t dummy_ret[AXI_DEPTH_RET_OUT] = {0};
         uint8_t dummy_sign_out[AXI_DEPTH_SIGN] = {0};
-        uint8_t dummy_mu_processed[AXI_DEPTH_MU] = {0};
-        uint8_t dummy_mu2_processed[AXI_DEPTH_MU] = {0};
+        uint8_t dummy_sign_m[AXI_DEPTH_SIGN_M] = {0};
         uint8_t dummy_sk[AXI_DEPTH_SK] = {0};
         uint8_t dummy_rnd[AXI_DEPTH_RND] = {0};
 
@@ -32,9 +31,8 @@ static int run_verify_cases()
             dummy_ret,
             dummy_sign_out,
             /*sign_in=*/const_cast<uint8_t *>(tc.sig),
-            dummy_mu_processed,
+            dummy_sign_m,
             /*mu_orig_in=*/const_cast<uint8_t *>(tc.msg),
-            dummy_mu2_processed,
             dummy_sk,
             /*pk_in=*/const_cast<uint8_t *>(tc.pk),
             &ver_out,
@@ -66,23 +64,21 @@ static int run_sign_cases()
         uint8_t dummy_mu_orig[AXI_DEPTH_MU_ORIG] = {0};
         uint8_t dummy_pk[AXI_DEPTH_PK] = {0};
         int dummy_ver_buf[AXI_DEPTH_VER_OUT] = {0};
-        uint8_t dummy_ctx[AXI_DEPTH_CTX] = {0};
 
         mldsa_accelerator(
             /*kem_cfg=*/0,
             ret_out,
             sign_out,
             dummy_sign_in,
-            /*mu_processed_in=*/const_cast<uint8_t *>(tc.mu),
+            /*sign_m_in=*/const_cast<uint8_t *>(tc.msg),
             dummy_mu_orig,
-            /*mu2_processed_in=*/const_cast<uint8_t *>(tc.mu),
             /*sk_in=*/const_cast<uint8_t *>(tc.sk),
             dummy_pk,
             dummy_ver_buf,
-            /*mlen_in=*/0,
+            /*mlen_in=*/tc.mlen,
             /*rnd_in=*/const_cast<uint8_t *>(tc.rnd),
-            dummy_ctx,
-            /*ctxlen_in=*/0);
+            /*ctx_in=*/const_cast<uint8_t *>(tc.ctx),
+            /*ctxlen_in=*/(uint8_t)tc.ctxlen);
 
         bool ok = (memcmp(sign_out, tc.expected_sig, CRYPTO_BYTES) == 0);
         printf("[SIGN]   %-28s ret=%u -> %s\n", tc.label, ret_out[0], ok ? "OK" : "MISMATCH");

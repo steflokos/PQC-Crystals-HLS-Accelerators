@@ -5,10 +5,10 @@ set_top mldsa_accelerator
 add_files k_dsa.cpp
 add_files kernel.hpp -cflags -DDILITHIUM_MODE=2
 open_solution "mldsa2" -flow_target vivado
-set_part {xcu280-fsvh2892-2L-e}
-create_clock -period 300MHz -name default
+set_part {xcku040-sfva784-1-c}
+create_clock -period 100MHz -name default
 config_dataflow -fifo_depth 100
-config_export -deadlock_detection none -format ip_catalog -ipname mldsa_accelerator_2 -output $parent_dir/mldsa/mldsa2 -rtl verilog -version 0.0.1 -vivado_clock 300MHz
+config_export -deadlock_detection none -format ip_catalog -ipname mldsa_accelerator_2 -output $parent_dir/mldsa/mldsa2 -rtl vhdl -version 0.0.1 -vivado_clock 100MHz
 config_interface -m_axi_addr64=0 -m_axi_conservative_mode
 # Default reset level ("control") only resets control/FSM registers on ap_start; it
 # does NOT reset registers/memories derived from static local variables - including
@@ -19,5 +19,5 @@ config_interface -m_axi_addr64=0 -m_axi_conservative_mode
 config_rtl -reset state
 set_directive_top -name mldsa_accelerator "mldsa_accelerator"
 csynth_design
-export_design -flow syn -rtl verilog -format ip_catalog -output $parent_dir/mldsa/mldsa2
+export_design -flow syn -rtl vhdl -format ip_catalog -output $parent_dir/mldsa/mldsa2
 exit
