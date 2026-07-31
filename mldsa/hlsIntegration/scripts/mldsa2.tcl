@@ -6,9 +6,9 @@ add_files k_dsa.cpp
 add_files kernel.hpp -cflags -DDILITHIUM_MODE=2
 open_solution "mldsa2" -flow_target vivado
 set_part {xcku040-sfva784-1-c}
-create_clock -period 100MHz -name default
+create_clock -period 200MHz -name default
 config_dataflow -fifo_depth 100
-config_export -deadlock_detection none -format ip_catalog -ipname mldsa_accelerator_2 -output $parent_dir/mldsa/mldsa2 -rtl vhdl -version 0.0.1 -vivado_clock 100MHz
+config_export -deadlock_detection none -format ip_catalog -ipname mldsa_accelerator_2 -output $parent_dir/mldsa/mldsa2 -rtl vhdl -version 0.0.1 -vivado_clock 200MHz
 config_interface -m_axi_addr64=0 -m_axi_conservative_mode
 # Default reset level ("control") only resets control/FSM registers on ap_start; it
 # does NOT reset registers/memories derived from static local variables - including
