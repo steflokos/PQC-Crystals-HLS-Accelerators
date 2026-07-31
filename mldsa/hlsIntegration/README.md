@@ -46,10 +46,12 @@ for `ret_out`/`ver_out` on `bundle=gmemout`). Both `k_verify` and `k_sign` build
 M' = BytesToBits(IntegerToBytes(0,1) || IntegerToBytes(|ctx|,1) || ctx) || M
 ```
 
-(via the shared `make_mprime` helper) ahead of `mu = H(tr || M', 64)` (Algorithm 8, step
-7), instead of hashing the raw message directly. `ctxlen_in` is `uint8_t`, so the spec's
-`|ctx| <= 255` bound (Algorithm 3, steps 1-3) holds by construction; no separate runtime
-check is required.
+(via the shared `make_mprime` helper) ahead of `mu = H(tr || M', 64)` - Algorithm 8
+(Verify_internal) step 7 for `k_verify`, Algorithm 7 (Sign_internal) step 6 for `k_sign`
+(one step earlier there, since Sign_internal already has `tr` from `sk` and does not need
+Verify_internal's preceding `tr = H(pk)` step) - instead of hashing the raw message
+directly. `ctxlen_in` is `uint8_t`, so the spec's `|ctx| <= 255` bound (Algorithm 3, steps
+1-3) holds by construction; no separate runtime check is required.
 
 ### On-chip `tr`/`M'`/`mu` derivation for `k_sign`
 

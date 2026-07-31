@@ -1814,11 +1814,15 @@ static void unpack_sk(hls::stream<uint8_t> &s_rho,
 #pragma HLS PIPELINE II=1
         s_key << s_sk.read();
     }
-    // tr = CRH(pk), FIPS 204's sk = rho || K || tr || s1 || s2 || t0 (Algorithm 6).
-    // Previously discarded here since k_sign took a pre-computed mu as an opaque
-    // input and never needed tr on-chip; now routed out so dataflow() can build
+    // tr (originally computed as tr = H(pk, 64) during KeyGen_internal, Algorithm 6
+    // step 9; sk = skEncode(rho, K, tr, s1, s2, t0) per that same algorithm, step 10 -
+    // skDecode reverses this in Sign_internal, Algorithm 7 step 1). Previously
+    // discarded here since k_sign took a pre-computed mu as an opaque input and
+    // never needed tr on-chip; now routed out so dataflow() can build
     // M' = 0x00 || len(ctx) || ctx || M and derive mu = H(tr || M', 64) itself
-    // (Algorithm 8, step 7), matching what k_verify already does for the same tr.
+    // (Algorithm 7, step 6), matching what k_verify already does for the same tr
+    // (Algorithm 8, step 7 - one step later there since Verify_internal must also
+    // compute tr = H(pk, 64) itself, Algorithm 8 step 6, rather than read it from sk).
     for (unsigned int i = 0; i < TRBYTES; i++) {
 #pragma HLS PIPELINE II=1
         s_tr << s_sk.read();
@@ -2360,9 +2364,12 @@ static void shake_mu_p(hls::stream<uint8_t> &out,
     keccak_squeeze(out, CTILDEBYTES, s, pos, SHAKE256_RATE);
 }
 
-// mu = H(tr || M', 64), FIPS 204 Algorithm 8 step 7 - the sign-path counterpart of
-// k_verify's shakeVer(s_mu, CRHBYTES, s_mu_mrg, TRBYTES+2+ctxlen+mlen, SHAKE256_RATE, 0)
-// call. Mirrors shakeVer's structure exactly but built from this file's non-Ver
+// mu = H(tr || M', 64), FIPS 204 Algorithm 7 (Sign_internal) step 6 - the sign-path
+// counterpart of k_verify's shakeVer(s_mu, CRHBYTES, s_mu_mrg, TRBYTES+2+ctxlen+mlen,
+// SHAKE256_RATE, 0) call, which computes the same equation for Verify_internal
+// (Algorithm 8 step 7 - one step later there since Verify_internal also computes
+// tr = H(pk, 64) itself in the immediately preceding step). Mirrors shakeVer's
+// structure exactly but built from this file's non-Ver
 // (sign-path) keccak_* primitives, since keccak_absorb takes a runtime-length stream
 // just like keccak_absorbVer does.
 static void shake_sign_mprime(hls::stream<uint8_t> &out, unsigned int outlen,
@@ -3127,10 +3134,12 @@ static hls::stream<ap_uint<1>> s_signal_rej("s_signal_rej");
 readmemVer(s_sk, sk, CRYPTO_SECRETKEYBYTES);
 unpack_sk(s_rho, s_key, s_t0, s_s1, s_s2, s_tr, s_sk);
 
-// mu = H(tr || M', 64), FIPS 204 Algorithm 2/8: M' = 0x00 || len(ctx) || ctx || M.
-// tr comes from sk (unpack_sk above), not from a separate hash of pk - sign_internal
-// already has tr stored in the secret key (Algorithm 6), unlike k_verify which must
-// compute tr = H(pk) fresh since verify never has more than the public key.
+// M' = 0x00 || len(ctx) || ctx || M (Algorithm 2 step 10, the external Sign wrapper -
+// identical formula to Algorithm 3 step 5 for Verify); mu = H(tr || M', 64) is then
+// Algorithm 7 (Sign_internal) step 6. tr comes from sk (unpack_sk above), not from a
+// separate hash of pk - Sign_internal already has tr stored in the secret key
+// (skDecode, Algorithm 7 step 1), unlike k_verify which must compute tr = H(pk)
+// fresh (Algorithm 8 step 6) since Verify_internal never has more than the public key.
 readmemVer(s_m_sign, m, mlen);
 readmemVer(s_ctx_sign, ctx, ctxlen);
 make_mprime(s_mu_mrg_sign, s_tr, s_ctx_sign, s_m_sign, ctxlen, mlen);
