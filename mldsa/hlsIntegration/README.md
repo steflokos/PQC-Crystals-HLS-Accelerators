@@ -5,11 +5,15 @@
 
 - Vitis\_HLS 2024.2 version
 
-To generate the accelerator, run:
+To generate the accelerator (100 MHz, VHDL, Vivado IP catalog format), run from this folder, in a checkout without an earlier
+`mldsa/` output (the exporter does not overwrite older files in `mldsa/mldsa2/impl/vhdl`):
 
 ```sh
-make mldsa2
+vitis-run --mode hls --tcl scripts/mldsa2.tcl
 ```
+
+The IP is written to `mldsa/mldsa2/impl/ip/` (`xilinx_com_hls_mldsa_accelerator_2_1_0.zip`; unpack it to use the folder as a Vivado IP repository).
+The `make mldsa2` target belongs to the upstream flow (Verilog files moved into `../src`) and does not apply to this VHDL export.
 
 ## FIPS 204 Compliance Changes (this fork)
 
@@ -105,6 +109,14 @@ fixed 64 bytes regardless of real message length) - the reduction reflects sign 
 honestly subject to the same bound verify already was, not a regression; see "Known
 finding" below.
 
+**Re-run on the final source (2026-11-08; Vitis HLS 2024.2, xcku040-sfva784-1-c, 100 MHz).** `csim_design`: 5/5 verify and 7/7 sign cases (NIST) and 16/16 sign and
+49/49 verify cases (edge cases, below), 0 errors. `cosim_design` with the settings of `scripts/mldsa2.tcl` (`config_dataflow -fifo_depth 100`,
+`config_interface -m_axi_addr64=0 -m_axi_conservative_mode`, `config_rtl -reset state -deadlock_detection none`): the reduced NIST set (2 verify, 2 sign) passes in
+26 min, the reduced edge set (4 sign, 6 verify) passes in 31 min. The simulator reports latencies (min / average / max) of 8,853 / 55,183 / 175,521 cycles for the NIST
+set and 8,848 / 45,132 / 159,196 cycles for the edge set. Its report lists `Verilog: Pass` and `VHDL: NA`: `cosim_design` simulates the Verilog output of the same synthesis,
+not the VHDL files that `scripts/mldsa2.tcl` exports. `config_rtl -reset state` has no effect on the generated RTL (the same source gives byte-identical VHDL with and
+without it); it is kept as a precaution.
+
 ### Running the testbench
 
 Two validation tiers, both gitignored until (re)generated locally: the downloaded NIST
@@ -116,7 +128,7 @@ cd mldsa/hlsIntegration/testbench
 python3 gen_vectors.py    # writes tb_vectors.h AND tb_vectors_cosim.h, stdlib only
 
 cd ..
-vitis-run --mode hls --tcl scripts/mldsa2_csim.tcl    # fast: plain C-simulation, all 45 vectors
+vitis-run --mode hls --tcl scripts/mldsa2_csim.tcl    # fast: plain C-simulation, the 12 applicable vectors (see below)
 vitis-run --mode hls --tcl scripts/mldsa2_cosim.tcl   # slow: full csynth + cycle-accurate RTL cosim, 4 reduced vectors
 ```
 
@@ -140,6 +152,26 @@ INFO: [COSIM 212-1000] *** C/RTL co-simulation finished: PASS ***
 ```
 
 Tested with Vitis HLS 2024.2 paired with Vivado 2024.2
+
+### Edge cases
+
+`testbench/tb_edge.cpp` checks the boundaries that the 12 NIST vectors leave unexercised: an empty context string in signing, a context of 255 bytes, messages of 0, 1 and 1024
+bytes, and hashed lengths `L = 64 + 2 + ctxlen + mlen` with `L mod 136` in {134, 135, 0, 1} and `L < 136` (136 is the SHAKE-256 rate: `L mod 136 = 135` puts both pad bytes in
+one byte, `L mod 136 = 0` needs an extra block). There are 16 signing and 49 verification cases; the verification cases include tampered signatures, messages and context strings
+that must be rejected. The expected results come from the pure-Python reference [`dilithium-py`](https://github.com/GiacomoPope/dilithium-py) (`pip install dilithium-py`),
+never from the accelerator, and the generator asserts that the reference accepts every valid signature and rejects every tampered one.
+
+```sh
+cd mldsa/hlsIntegration/testbench
+python3 gen_edge.py       # writes tb_vectors_edge.h and tb_vectors_edge_cosim.h (gitignored)
+
+cd ..
+vitis-run --mode hls --tcl scripts/mldsa2_edge_csim.tcl     # fast: all 65 cases
+vitis-run --mode hls --tcl scripts/mldsa2_edge_cosim.tcl    # slow: csynth + RTL cosim, 4 sign + 6 verify cases
+```
+
+Expect `=== Edge result: 16/16 sign OK, 49/49 verify OK ===` and `CSim done with 0 errors` from the first, and `=== Edge result: 4/4 sign OK, 6/6 verify OK ===` and
+`C/RTL co-simulation finished: PASS` from the second.
 
 ### Known finding: message-length buffer sizing (`mu_orig_in` / `sign_m_in`)
 

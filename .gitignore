@@ -2,6 +2,8 @@
 mldsa/hlsIntegration/mldsa/
 mldsa/hlsIntegration/mldsa_test/
 mldsa/hlsIntegration/mldsa_test_cosim/
+mldsa/hlsIntegration/mldsa_test_edge/
+mldsa/hlsIntegration/mldsa_test_edge_cosim/
 mlkem/hlsIntegration/mlkem*/
 **/hlsIntegration/logs/
 *.log
@@ -10,4 +12,6 @@ mlkem/hlsIntegration/mlkem*/
 # testbench/fetch_vectors.sh + testbench/gen_vectors.py [--reduced] - see README)
 **/testbench/tb_vectors.h
 **/testbench/tb_vectors_cosim.h
+**/testbench/tb_vectors_edge.h
+**/testbench/tb_vectors_edge_cosim.h
 **/testbench/vectors/
