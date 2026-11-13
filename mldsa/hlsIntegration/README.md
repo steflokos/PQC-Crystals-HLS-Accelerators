@@ -3,10 +3,10 @@
 
 ### Requirements:
 
-- Vitis\_HLS 2024.2 version
+- Vitis HLS 2025.2 (`vitis-run`; the scripts use no command that 2025.2 marks as deprecated)
 
-To generate the accelerator (100 MHz, VHDL, Vivado IP catalog format), run from this folder, in a checkout without an earlier
-`mldsa/` output (the exporter does not overwrite older files in `mldsa/mldsa2/impl/vhdl`):
+To generate the accelerator (200 MHz, VHDL, Vivado IP catalog format, with Vivado out-of-context synthesis reports), run from this folder,
+in a checkout without an earlier `mldsa/` output (the exporter does not overwrite older files in `mldsa/mldsa2/impl/vhdl`):
 
 ```sh
 vitis-run --mode hls --tcl scripts/mldsa2.tcl
@@ -151,7 +151,8 @@ end with:
 INFO: [COSIM 212-1000] *** C/RTL co-simulation finished: PASS ***
 ```
 
-Tested with Vitis HLS 2024.2 paired with Vivado 2024.2
+The results above were obtained with Vitis HLS 2024.2 and Vivado 2024.2 at 100 MHz. The scripts now target Vitis HLS 2025.2 at 200 MHz;
+`mldsa2_csim.tcl` gives the same 5/5 and 7/7 result there (C simulation does not depend on the clock); the co-simulations were not re-run.
 
 ### Edge cases
 
